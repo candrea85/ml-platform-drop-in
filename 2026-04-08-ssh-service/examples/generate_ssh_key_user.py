@@ -105,10 +105,6 @@ class _OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
         _OAuthCallbackHandler.state = params.get("state", [None])[0]
         _OAuthCallbackHandler.error = params.get("error", [None])[0]
 
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html")
-        self.end_headers()
-
         if _OAuthCallbackHandler.auth_code:
             body = (
                 "<html><body style='font-family:system-ui;text-align:center;padding:80px'>"
@@ -124,7 +120,14 @@ class _OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
                 f"<p>{error_desc}</p>"
                 "</body></html>"
             )
-        self.wfile.write(body.encode())
+        encoded = body.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(encoded)
+        self.wfile.flush()
 
     def log_message(self, format, *args):
         pass  # Silence server logs
