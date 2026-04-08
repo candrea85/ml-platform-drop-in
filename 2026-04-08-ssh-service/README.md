@@ -98,23 +98,33 @@ variable and the script handles everything. Currently limited to 1min ephemeral 
 ### Quick start (curl)
 
 ```bash
-# The browser-based flow requires a script — see the examples below.
-# Here's what happens under the hood once you have a token:
+# Step 1: Get an OIDC access token (requires username, password, and OTP)
+TOKEN=$(curl -s -X POST \
+  "https://auth.cscs.ch/auth/realms/cscs/protocol/openid-connect/token" \
+  -d "grant_type=password" \
+  -d "client_id=authx-cli" \
+  -d "username=YOUR_USERNAME" \
+  --data-urlencode "password=YOUR_PASSWORD" \
+  -d "totp=YOUR_OTP_CODE" | jq -r '.access_token')
 
-# Generate a key pair (1-day duration)
+# Step 2: Generate a key pair (1-day duration)
 curl -s -X POST \
   "https://authx-gateway.svc.cscs.ch/api-ssh-service/api/v1/ssh-keys" \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"duration": "1d"}'
 
 # Or sign your own public key
 curl -s -X POST \
   "https://authx-gateway.svc.cscs.ch/api-ssh-service/api/v1/ssh-keys/sign" \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"publicKey\": \"$(cat ~/.ssh/cscs-key.pub)\", \"duration\": \"1d\"}"
 ```
+
+> **Note:** The token endpoint also supports the browser-based Authorization Code
+> flow with PKCE (used by the example scripts). The `password` grant shown above
+> is a simpler alternative for quick tests or environments without a browser.
 
 ---
 
