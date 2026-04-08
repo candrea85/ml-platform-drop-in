@@ -116,17 +116,6 @@ curl -s -X POST \
   -d "{\"publicKey\": \"$(cat ~/.ssh/cscs-key.pub)\", \"duration\": \"1d\"}"
 ```
 
-### OIDC Configuration
-
-| Parameter | Value |
-|---|---|
-| Issuer (prod) | `https://auth.cscs.ch/auth/realms/cscs` |
-| Issuer (TDS) | `https://auth-tds.cscs.ch/auth/realms/cscs` |
-| Client ID | `authx-cli` |
-| Redirect URI | `http://localhost:8765` |
-| Scope | `openid` |
-| PKCE method | S256 |
-
 ---
 
 ## Flow B: Service Account (API Key)
