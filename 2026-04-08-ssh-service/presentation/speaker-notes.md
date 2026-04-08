@@ -1,5 +1,11 @@
 # Speaker Notes -- IAM Tooling Update (2026-04-08)
 
+## Before Slide 1: Intro -- Drop-in repo and housekeeping
+
+- Before we start, a quick note: we have created a GitHub repository for the ML Platform drop-in sessions. The idea is to publish materials -- presentations, examples, reference scripts -- for topics that go beyond what is already covered in the official documentation. Not all sessions will have materials here, only the ones where it makes sense. The repo will be moved to a more official location soon. For now you can find it at github.com/candrea85/ml-platform-drop-in.
+
+---
+
 ## Slide 1: Title -- IAM Tooling Update for ML Platform Users
 
 - Welcome everyone, thank you for joining this drop-in session.
@@ -12,7 +18,7 @@
 
 ## Slide 2: Context -- IAM modernization and the SSH Service
 
-- The adoption of portal.cscs.ch required a modernization of the IAM services and the tooling around them.
+- As you know, CSCS has been migrating the management of users, projects, and resources to portal.cscs.ch. Some of you may remember the previous tool, UMP. Last week we completed the migration of all clusters and projects to portal.cscs.ch. This migration required a modernization of the IAM services and the tooling around them.
 - The SSH Service is a core service -- it is how users access the centre. Over the last months, the IAM team completed a full refactoring of the backend API, the web frontend, and the CLI.
 - The new version has been in production for a few weeks, currently for internal use. Today we are introducing it to the ML Platform community.
 - About the legacy service: the old SSH Service (sshservice.cscs.ch) and sshservice-cli are still active and working. The target retirement date is April 20, but this is not set in stone. Depending on your feedback and use cases, we can extend the timeline. That said, we encourage everyone to migrate to the new tooling as soon as possible.
