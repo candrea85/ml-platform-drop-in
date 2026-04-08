@@ -339,6 +339,10 @@ never leaves your machine. This is the recommended approach.
 ### What happens to the old tooling?
 
 The legacy `sshservice.cscs.ch` endpoint and `sshservice-cli` will be deprecated.
+The target retirement date is **April 20, 2026**, but this is not set in stone.
+Depending on use cases and user feedback, the timeline may be extended. That said,
+we encourage users to migrate to the new tooling as soon as possible.
+
 If you use the ML community's `cscs-cl` script, see [`cscs-cl-v2-user`](examples/cscs-cl-v2-user)
 (user account) or [`cscs-cl-v2-service-account`](examples/cscs-cl-v2-service-account) (service account) as drop-in replacements.
 
