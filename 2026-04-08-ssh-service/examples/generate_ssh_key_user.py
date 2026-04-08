@@ -56,11 +56,11 @@ except ImportError:
 ENVIRONMENTS = {
     "prod": {
         "issuer": "https://auth.cscs.ch/auth/realms/cscs",
-        "hpc_ssh_base_url": "https://authx-gateway.tds.cscs.ch/api-ssh-service",
+        "hpc_ssh_base_url": "https://authx-gateway.svc.cscs.ch/api-ssh-service",
     },
     "tds": {
         "issuer": "https://auth-tds.cscs.ch/auth/realms/cscs",
-        "hpc_ssh_base_url": "https://api-ssh-service.hpc-ssh.tds.cscs.ch",
+        "hpc_ssh_base_url": "https://authx-gateway.tds.cscs.ch/api-ssh-service",
     },
 }
 

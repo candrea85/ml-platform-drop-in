@@ -19,7 +19,7 @@ set -euo pipefail
 # Configuration
 # ---------------------------------------------------------------------------
 OIDC_ISSUER="${OIDC_ISSUER:-https://auth.cscs.ch/auth/realms/cscs}"
-HPC_SSH_BASE_URL="${HPC_SSH_BASE_URL:-https://authx-gateway.tds.cscs.ch/api-ssh-service}"
+HPC_SSH_BASE_URL="${HPC_SSH_BASE_URL:-https://authx-gateway.svc.cscs.ch/api-ssh-service}"
 CLIENT_ID="authx-cli"
 REDIRECT_PORT=8765
 REDIRECT_URI="http://localhost:${REDIRECT_PORT}"

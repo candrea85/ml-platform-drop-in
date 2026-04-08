@@ -52,11 +52,11 @@ except ImportError:
 # ---------------------------------------------------------------------------
 DEFAULT_HPC_USER_BASE_URL = os.environ.get(
     "HPC_USER_BASE_URL",
-    "https://authx-gateway.tds.cscs.ch/api-service-account",
+    "https://authx-gateway.svc.cscs.ch/api-service-account",
 )
 DEFAULT_HPC_SSH_BASE_URL = os.environ.get(
     "HPC_SSH_BASE_URL",
-    "https://authx-gateway.tds.cscs.ch/api-ssh-service",
+    "https://authx-gateway.svc.cscs.ch/api-ssh-service",
 )
 
 TOKEN_ENDPOINT = "/api/v1/auth/token"
