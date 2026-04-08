@@ -144,7 +144,15 @@ print(urllib.parse.urlencode(params))
         echo "  $auth_url"
     fi
 
-    # Listen for redirect using python3
+    # Start a temporary local HTTP server on localhost:REDIRECT_PORT.
+    # After the user logs in, Keycloak redirects the browser here with the
+    # authorization code.  The embedded Python snippet:
+    #   1. Parses the "code" and "state" query parameters from the redirect URL
+    #   2. Returns a success/failure page to the browser
+    #   3. Prints "code<TAB>state" to stdout so the calling bash script can
+    #      capture them for the token exchange step
+    # Content-Length and Connection:close headers ensure the browser receives
+    # the full response before the server shuts down.
     echo "  Waiting for authentication (timeout: 2 minutes) ..."
     local callback_result
     callback_result=$(python3 -c "
@@ -166,6 +174,7 @@ class H(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
         self.wfile.flush()
+        # Print code and state to stdout (captured by the bash script)
         print(f'{code or \"\"}\t{st or \"\"}')
     def log_message(self, *a): pass
 

@@ -91,7 +91,17 @@ def _generate_pkce() -> tuple[str, str]:
 # Local HTTP server to catch the OIDC redirect
 # ---------------------------------------------------------------------------
 class _OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
-    """Handles the single redirect from the OIDC provider."""
+    """Temporary HTTP handler for the OIDC redirect.
+
+    After the user logs in, Keycloak redirects the browser to
+    http://localhost:REDIRECT_PORT with an authorization code.
+    This handler:
+      1. Parses the "code", "state", and "error" query parameters
+      2. Stores them as class attributes for the caller to read
+      3. Returns a success/failure page to the browser
+    Content-Length and Connection:close headers ensure the browser
+    receives the full response before the server shuts down.
+    """
 
     auth_code: str | None = None
     state: str | None = None
@@ -101,10 +111,12 @@ class _OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         params = urllib.parse.parse_qs(parsed.query)
 
+        # Extract the authorization code and state from the redirect URL
         _OAuthCallbackHandler.auth_code = params.get("code", [None])[0]
         _OAuthCallbackHandler.state = params.get("state", [None])[0]
         _OAuthCallbackHandler.error = params.get("error", [None])[0]
 
+        # Build the response page shown in the browser
         if _OAuthCallbackHandler.auth_code:
             body = (
                 "<html><body style='font-family:system-ui;text-align:center;padding:80px'>"
@@ -120,6 +132,9 @@ class _OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
                 f"<p>{error_desc}</p>"
                 "</body></html>"
             )
+
+        # Send a complete HTTP response with explicit length so the browser
+        # does not show a connection-reset error when the server exits
         encoded = body.encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
@@ -134,7 +149,8 @@ class _OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
 
 
 def _wait_for_auth_code() -> str:
-    """Start local server, wait for OIDC redirect, return auth code."""
+    """Start a local HTTP server on localhost:REDIRECT_PORT, wait for the
+    OIDC redirect (up to 2 minutes), and return the authorization code."""
     server = http.server.HTTPServer(
         (REDIRECT_HOST, REDIRECT_PORT), _OAuthCallbackHandler
     )
