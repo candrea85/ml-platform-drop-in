@@ -1,0 +1,360 @@
+#!/bin/bash
+
+# cscs-cl-v2-user — Connect to CSCS login nodes using browser-based OIDC login
+#
+# Adaptation of the ML community's cscs-cl script for standard user accounts.
+# Instead of username + password + OTP, it opens your browser for OIDC login
+# (same flow as the cscs-key CLI), then generates a signed SSH key.
+#
+# Usage:
+#   ./cscs-cl-v2-user [--duration 1d] [--secure] [command]
+#
+# Prerequisites:
+#   - curl, jq, and python3 must be installed
+#   - A browser must be available for OIDC login
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+OIDC_ISSUER="${OIDC_ISSUER:-https://auth.cscs.ch/auth/realms/cscs}"
+HPC_SSH_BASE_URL="${HPC_SSH_BASE_URL:-https://api-ssh-service.hpc-ssh.svc.cscs.ch}"
+CLIENT_ID="authx-cli"
+REDIRECT_PORT=8765
+REDIRECT_URI="http://localhost:${REDIRECT_PORT}"
+DURATION="${DURATION:-1d}"
+
+GENERATE_ENDPOINT="${HPC_SSH_BASE_URL}/api/v1/ssh-keys"
+
+SSH_KEY_PATH="$HOME/.ssh/cscs-key"
+SSH_CERT_PATH="$HOME/.ssh/cscs-key-cert.pub"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+die() {
+    echo "Error: $*" >&2
+    exit 1
+}
+
+check_dependencies() {
+    command -v curl >/dev/null 2>&1 || die "curl is required but not installed."
+    command -v jq >/dev/null 2>&1 || die "jq is required but not installed."
+    command -v python3 >/dev/null 2>&1 || die "python3 is required but not installed."
+}
+
+# Function to check if existing keys are valid
+check_keys() {
+    ssh -q ela.cscs.ch exit 2>/dev/null
+    return $?
+}
+
+# Function to setup SSH config if it doesn't exist
+setup_ssh_config() {
+    local username="$1"
+    local ssh_config="$HOME/.ssh/config"
+
+    mkdir -p "$HOME/.ssh"
+    touch "$ssh_config"
+
+    if grep -q "Host clariden" "$ssh_config" 2>/dev/null; then
+        return
+    fi
+
+    cat >> "$ssh_config" << EOF
+
+Host ela ela.cscs.ch
+    Hostname ela.cscs.ch
+    User ${username}
+    ForwardAgent yes
+    ForwardX11 yes
+    ForwardX11Trusted yes
+    StrictHostKeyChecking accept-new
+    IdentityFile ~/.ssh/cscs-key
+
+Host clariden clariden.cscs.ch
+    Hostname clariden.cscs.ch
+    User ${username}
+    ForwardAgent yes
+    StrictHostKeyChecking accept-new
+    IdentityFile ~/.ssh/cscs-key
+    ProxyJump ela
+EOF
+    echo "  SSH config updated for ela and clariden."
+}
+
+# ---------------------------------------------------------------------------
+# PKCE helpers (using python3 for crypto)
+# ---------------------------------------------------------------------------
+generate_pkce() {
+    eval "$(python3 -c "
+import secrets, hashlib, base64
+verifier = secrets.token_urlsafe(64)
+digest = hashlib.sha256(verifier.encode('ascii')).digest()
+challenge = base64.urlsafe_b64encode(digest).rstrip(b'=').decode('ascii')
+print(f'PKCE_VERIFIER=\"{verifier}\"')
+print(f'PKCE_CHALLENGE=\"{challenge}\"')
+")"
+}
+
+# ---------------------------------------------------------------------------
+# Step 1: OIDC Authorization Code flow with PKCE
+# ---------------------------------------------------------------------------
+get_access_token() {
+    echo "  Discovering OIDC endpoints ..."
+
+    local well_known="${OIDC_ISSUER}/.well-known/openid-configuration"
+    local disco
+    disco=$(curl -s "$well_known")
+
+    local auth_endpoint
+    auth_endpoint=$(echo "$disco" | jq -r '.authorization_endpoint')
+    local token_endpoint
+    token_endpoint=$(echo "$disco" | jq -r '.token_endpoint')
+
+    # Generate PKCE
+    generate_pkce
+    local state
+    state=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+
+    # Build authorization URL
+    local auth_url="${auth_endpoint}?$(python3 -c "
+import urllib.parse
+params = {
+    'client_id': '${CLIENT_ID}',
+    'response_type': 'code',
+    'redirect_uri': '${REDIRECT_URI}',
+    'scope': 'openid',
+    'state': '${state}',
+    'code_challenge': '${PKCE_CHALLENGE}',
+    'code_challenge_method': 'S256',
+}
+print(urllib.parse.urlencode(params))
+")"
+
+    # Open browser
+    echo "  Opening browser for authentication ..."
+    if command -v open >/dev/null 2>&1; then
+        open "$auth_url"
+    elif command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "$auth_url"
+    else
+        echo "  Please open this URL in your browser:"
+        echo "  $auth_url"
+    fi
+
+    # Listen for redirect using python3
+    echo "  Waiting for authentication (timeout: 2 minutes) ..."
+    local callback_result
+    callback_result=$(python3 -c "
+import http.server, urllib.parse, sys
+
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        code = params.get('code', [None])[0]
+        st = params.get('state', [None])[0]
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html')
+        self.end_headers()
+        if code:
+            self.wfile.write(b'<html><body style=\"font-family:system-ui;text-align:center;padding:80px\"><h1>OK</h1><p>Return to terminal.</p></body></html>')
+        else:
+            self.wfile.write(b'<html><body style=\"font-family:system-ui;text-align:center;padding:80px\"><h1>Failed</h1></body></html>')
+        print(f'{code or \"\"}\t{st or \"\"}')
+    def log_message(self, *a): pass
+
+s = http.server.HTTPServer(('127.0.0.1', ${REDIRECT_PORT}), H)
+s.timeout = 120
+s.handle_request()
+s.server_close()
+" 2>&1)
+
+    local auth_code
+    auth_code=$(echo "$callback_result" | tail -1 | cut -f1)
+    local returned_state
+    returned_state=$(echo "$callback_result" | tail -1 | cut -f2)
+
+    [ -n "$auth_code" ] || die "No authorization code received. Authentication may have timed out."
+    [ "$returned_state" = "$state" ] || die "State mismatch — possible CSRF attack."
+
+    # Exchange code for token
+    echo "  Exchanging authorization code for token ..."
+    local token_response
+    token_response=$(curl -s -X POST "$token_endpoint" \
+        -d "grant_type=authorization_code" \
+        -d "client_id=${CLIENT_ID}" \
+        -d "code=${auth_code}" \
+        -d "redirect_uri=${REDIRECT_URI}" \
+        -d "code_verifier=${PKCE_VERIFIER}")
+
+    ACCESS_TOKEN=$(echo "$token_response" | jq -r '.access_token // empty')
+    [ -n "$ACCESS_TOKEN" ] || die "Failed to obtain access token: $(echo "$token_response" | jq -r '.error_description // .error // "unknown error"')"
+
+    local expires_in
+    expires_in=$(echo "$token_response" | jq -r '.expires_in // "unknown"')
+    echo "  Access token obtained (expires in ${expires_in}s)"
+}
+
+# ---------------------------------------------------------------------------
+# Step 2: Generate SSH Key
+# ---------------------------------------------------------------------------
+generate_ssh_key() {
+    local access_token="$1"
+    local duration="${2:-1d}"
+
+    echo "  Generating SSH key (duration=${duration}) ..."
+
+    local response
+    response=$(curl -s -w "\n%{http_code}" -X POST \
+        "${GENERATE_ENDPOINT}" \
+        -H "Authorization: Bearer ${access_token}" \
+        -H "Content-Type: application/json" \
+        -d "{\"duration\": \"${duration}\"}")
+
+    local http_code
+    http_code=$(echo "$response" | tail -1)
+    local body
+    body=$(echo "$response" | sed '$d')
+
+    case "$http_code" in
+        201) ;;
+        401) die "Access token is invalid or expired. Re-run to authenticate." ;;
+        *)   die "Key generation failed (HTTP ${http_code}): ${body}" ;;
+    esac
+
+    PUBLIC_KEY=$(echo "$body" | jq -r '.sshKey.publicKey // empty')
+    PRIVATE_KEY=$(echo "$body" | jq -r '.sshKey.privateKey // empty')
+    SERIAL_NUMBER=$(echo "$body" | jq -r '.sshKey.serialNumber // "N/A"')
+    EXPIRE_TIME=$(echo "$body" | jq -r '.sshKey.expireTime // "N/A"')
+
+    [ -n "$PUBLIC_KEY" ] || die "No publicKey in response"
+    [ -n "$PRIVATE_KEY" ] || die "No privateKey in response"
+
+    echo "  Key generated (serial: ${SERIAL_NUMBER}, expires: ${EXPIRE_TIME})"
+}
+
+# ---------------------------------------------------------------------------
+# Step 3: Write keys
+# ---------------------------------------------------------------------------
+write_keys() {
+    echo "  Writing keys to ${SSH_KEY_PATH} ..."
+
+    mkdir -p "$HOME/.ssh"
+
+    printf '%s\n' "$PRIVATE_KEY" > "$SSH_KEY_PATH"
+    chmod 600 "$SSH_KEY_PATH"
+
+    printf '%s\n' "$PUBLIC_KEY" > "$SSH_CERT_PATH"
+    chmod 644 "$SSH_CERT_PATH"
+
+    echo "  Keys written successfully."
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+main() {
+    check_dependencies
+
+    local secure_mode=0
+    local duration="1d"
+
+    if [[ "${1:-}" == "--help" ]]; then
+        cat << EOF
+Usage: $(basename "$0") [--duration 1min|1d] [--secure] [command]
+
+Connect to CSCS Clariden using browser-based OIDC authentication.
+
+Options:
+  --duration DURATION   Key duration: 1min, 1d (default: 1d)
+  --secure              Prompt to add a passphrase to the SSH key
+  --help                Show this help message
+
+The script will:
+  1. Open your browser for CSCS login (OIDC)
+  2. Generate a signed SSH key pair
+  3. Write keys to ~/.ssh/cscs-key
+  4. Add the key to ssh-agent
+  5. Connect to Clariden
+
+If keys are still valid from a previous run, it skips steps 1-4.
+EOF
+        exit 0
+    fi
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --secure)
+                secure_mode=1
+                shift
+                ;;
+            --duration)
+                duration="$2"
+                shift 2
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
+    # Check if existing keys are still valid
+    if check_keys; then
+        echo "Existing SSH keys are still valid."
+    else
+        echo "CSCS SSH Key Setup (User Account — browser login)"
+        echo "=================================================="
+        echo ""
+
+        # Step 1: Get access token via browser
+        echo "[1/3] Authenticating via browser ..."
+        get_access_token
+        echo ""
+
+        # Step 2: Generate key
+        echo "[2/3] Generating SSH key ..."
+        generate_ssh_key "$ACCESS_TOKEN" "$duration"
+        echo ""
+
+        # Step 3: Write keys
+        echo "[3/3] Installing keys ..."
+        write_keys
+        echo ""
+
+        # Setup SSH config
+        local username
+        username=$(ssh-keygen -L -f "$SSH_CERT_PATH" 2>/dev/null | grep "Principals:" -A1 | tail -1 | tr -d ' ' || true)
+        if [ -n "$username" ]; then
+            setup_ssh_config "$username"
+        fi
+
+        # Optional passphrase
+        if (( secure_mode )); then
+            local exit_code=1
+            while [ $exit_code -ne 0 ]; do
+                ssh-keygen -f "$SSH_KEY_PATH" -p
+                exit_code=$?
+            done
+        fi
+
+        # Add key to ssh-agent
+        local ttl_map_1min=60 ttl_map_1d=86400
+        local ttl_var="ttl_map_${duration//d/d}"
+        ttl_var="${ttl_var//min/min}"
+        local ttl="${!ttl_var:-86400}"
+        ssh-add -t "$ttl" "$SSH_KEY_PATH"
+
+        echo ""
+        echo "Keys are ready. Connecting to Clariden ..."
+    fi
+
+    # Connect
+    local tty_flag=""
+    [ $# -eq 0 ] && tty_flag=" -t"
+
+    ssh${tty_flag} clariden "${@:-exec \$SHELL -l}"
+}
+
+main "$@"
