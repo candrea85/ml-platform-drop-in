@@ -103,14 +103,14 @@ variable and the script handles everything. Currently limited to 1min ephemeral 
 
 # Generate a key pair (1-day duration)
 curl -s -X POST \
-  "https://api-ssh-service.hpc-ssh.svc.cscs.ch/api/v1/ssh-keys" \
+  "https://authx-gateway.tds.cscs.ch/api-ssh-service/api/v1/ssh-keys" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"duration": "1d"}'
 
 # Or sign your own public key
 curl -s -X POST \
-  "https://api-ssh-service.hpc-ssh.svc.cscs.ch/api/v1/ssh-keys/sign" \
+  "https://authx-gateway.tds.cscs.ch/api-ssh-service/api/v1/ssh-keys/sign" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"publicKey\": \"$(cat ~/.ssh/cscs-key.pub)\", \"duration\": \"1d\"}"
@@ -145,12 +145,12 @@ curl -s -X POST \
 ```bash
 # Step 1: Exchange API Key for token
 TOKEN=$(curl -s -X POST \
-  "https://api-service-account.hpc-user.svc.cscs.ch/api/v1/auth/token" \
+  "https://authx-gateway.tds.cscs.ch/api-service-account/api/v1/auth/token" \
   -H "X-API-Key: YOUR_API_KEY" | jq -r '.access_token')
 
 # Step 2: Generate an ephemeral key
 curl -s -X POST \
-  "https://api-ssh-service.hpc-ssh.svc.cscs.ch/api/v1/ssh-keys" \
+  "https://authx-gateway.tds.cscs.ch/api-ssh-service/api/v1/ssh-keys" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{}'
@@ -164,8 +164,8 @@ curl -s -X POST \
 
 | Service | Purpose | Base URL |
 |---|---|---|
-| hpc-user (api-service-account) | Token exchange | `https://api-service-account.hpc-user.svc.cscs.ch` |
-| hpc-ssh (api-ssh-service) | SSH key operations | `https://api-ssh-service.hpc-ssh.svc.cscs.ch` |
+| hpc-user (api-service-account) | Token exchange | `https://authx-gateway.tds.cscs.ch/api-service-account` |
+| hpc-ssh (api-ssh-service) | SSH key operations | `https://authx-gateway.tds.cscs.ch/api-ssh-service` |
 
 > **Note**: Replace with the correct production URLs for your environment.
 
