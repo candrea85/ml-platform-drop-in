@@ -8,6 +8,6 @@ Not all drop-in sessions will have materials published here. This repo is intend
 
 ## Sessions
 
-| Date | Topic | Materials |
-|---|---|---|
-| 2026-04-08 | SSH Service: new IAM tooling | [Session folder](2026-04-08-ssh-service/) |
+| Date | Topic | Materials | Slides |
+|---|---|---|---|
+| 2026-04-08 | SSH Service: new IAM tooling | [Session folder](2026-04-08-ssh-service/) | [View slides](https://candrea85.github.io/ml-platform-drop-in/2026-04-08-ssh-service/presentation/slides.html) |
